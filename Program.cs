@@ -117,11 +117,11 @@ public class PublishingPlatform
 
     private void StripCodeHeader(HtmlNode body)
     {
-        foreach (var remove in body.SelectNodes("//span[text()='&#60419;']").ToArray())
+        foreach (var remove in body.SelectNodes("//span[text()='&#60419;']")?.ToArray() ??  Array.Empty<HtmlNode>())
         {
             remove.Remove();
         }
-        foreach (var remove in body.SelectNodes("//span[text()='&#60418;']").ToArray())
+        foreach (var remove in body.SelectNodes("//span[text()='&#60418;']")?.ToArray() ?? Array.Empty<HtmlNode>())
         {
             remove.Remove();
         }
@@ -130,7 +130,7 @@ public class PublishingPlatform
     private static string GetPostContents(HtmlDocument htmlDoc, HtmlNode body)
     {
         // we use the @scope element to ensure that the document style doesn't "leak" outside
-        var style = htmlDoc.DocumentNode.SelectSingleNode("//head/style[@type='text/css']").InnerText;
+        var style = htmlDoc.DocumentNode.SelectSingleNode("//head/style[@type='text/css']")?.InnerText;
         var post = "<style>@scope {" + style + "}</style> " + body.InnerHtml;
         return post;
     }
@@ -138,7 +138,7 @@ public class PublishingPlatform
     private static void UpdateLinks(HtmlNode body)
     {
         // Google Docs put a redirect like: https://www.google.com/url?q=ACTUAL_URL
-        foreach (var link in body.SelectNodes("//a[@href]").ToArray())
+        foreach (var link in body.SelectNodes("//a[@href]")?.ToArray() ?? Array.Empty<HtmlNode>())
         {
             var href = new Uri(link.Attributes["href"].Value);
             var url = HttpUtility.ParseQueryString(href.Query)["q"];
@@ -153,7 +153,7 @@ public class PublishingPlatform
     {
         string? postId = null;
         var tags = new List<string>();
-        foreach (var span in body.SelectNodes("//span"))
+        foreach (var span in body.SelectNodes("//span")?.ToArray() ?? Array.Empty<HtmlNode>())
         {
             var text = span.InnerText.Trim();
             const string TagsPrefix = "Tags:";

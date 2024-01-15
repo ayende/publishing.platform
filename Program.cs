@@ -10,7 +10,13 @@ using System.Diagnostics;
 using System.IO.Compression;
 using System.Web;
 
-var documentId = Environment.GetCommandLineArgs()[1];
+var arg = Environment.GetCommandLineArgs()[1];
+
+var documentId = arg;
+if(Uri.TryCreate(arg, UriKind.Absolute, out var uri))
+{
+    documentId = uri.AbsolutePath.Split('/')[^2]; // the one after the /edit
+}
 
 var state = NewtonsoftJsonSerializer.Instance.Deserialize<Configuration>(File.ReadAllText(@"C:\Work\Credentials\blog.json"));
 

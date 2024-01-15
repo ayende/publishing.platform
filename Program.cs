@@ -170,7 +170,7 @@ public class PublishingPlatform
             }
         }
         // after we removed post id & tags, trim the empty lines
-        while (body.FirstChild.InnerText.Trim() is "&nbsp;" or "")
+        while (body.FirstChild.InnerText.Trim() is "&nbsp;" or "" && body.FirstChild.SelectNodes("//img") == null)
         {
             body.RemoveChild(body.FirstChild);
         }
@@ -205,7 +205,7 @@ public class PublishingPlatform
             var result = _blogClient.NewMediaObject(slug + "/" + Path.GetFileName(image.Name), type, bytes);
             mapping[image.FullName] = new UriBuilder { Path = result.URL }.Uri.AbsolutePath;
         }
-        foreach (var img in body.SelectNodes("//img[@src]").ToArray())
+        foreach (var img in body.SelectNodes("//img[@src]")?.ToArray() ?? Array.Empty<HtmlNode>())
         {
             if (mapping.TryGetValue(img.Attributes["src"].Value, out var path))
             {

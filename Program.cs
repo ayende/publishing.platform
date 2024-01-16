@@ -84,7 +84,9 @@ public class PublishingPlatform
         var (postId, tags) = ReadPostIdAndTags(body);
 
         UpdateLinks(body);
-        StripCodeHeader(body);
+
+        StripStylesExceptForCodeSnippets(body);
+
         UploadImages(zip, body, GenerateSlug(title));
 
         string post = GetPostContents(htmlDoc, body);
@@ -115,15 +117,29 @@ public class PublishingPlatform
         GoogleDocs.Documents.BatchUpdate(update, documentId).Execute();
     }
 
-    private void StripCodeHeader(HtmlNode body)
+    private static void StripStylesExceptForCodeSnippets(HtmlNode body)
     {
-        foreach (var remove in body.SelectNodes("//span[text()='&#60419;']")?.ToArray() ??  Array.Empty<HtmlNode>())
+        var insideCodeHeader = false;
+        foreach (var e in body.SelectNodes("//*[@style]")?.ToArray() ?? Array.Empty<HtmlNode>())
         {
-            remove.Remove();
-        }
-        foreach (var remove in body.SelectNodes("//span[text()='&#60418;']")?.ToArray() ?? Array.Empty<HtmlNode>())
-        {
-            remove.Remove();
+            if (insideCodeHeader)
+            {
+                if (e.InnerText == "&#60418;") // end code marker
+                {
+                    insideCodeHeader = false;
+                    e.Remove();
+                }
+                continue;
+            }
+            var style = e.Attributes["style"].Value;
+            if (style is "font-style:italic" or "font-weight:700")
+                continue;
+            e.Attributes.Remove("style");
+            if (e.InnerText == "&#60419;")
+            {
+                insideCodeHeader = true;
+                e.Remove();
+            }
         }
     }
 
@@ -131,7 +147,7 @@ public class PublishingPlatform
     {
         // we use the @scope element to ensure that the document style doesn't "leak" outside
         var style = htmlDoc.DocumentNode.SelectSingleNode("//head/style[@type='text/css']")?.InnerText;
-        var post = "<style>@scope {" + style + "}</style> " + body.InnerHtml;
+        var post = body.InnerHtml + "<style>@scope {" + style + "}</style> ";
         return post;
     }
 
@@ -170,7 +186,7 @@ public class PublishingPlatform
             }
         }
         // after we removed post id & tags, trim the empty lines
-        while (body.FirstChild.InnerText.Trim() is "&nbsp;" or "" && body.FirstChild.SelectNodes("//img") == null)
+        while (body.FirstChild.InnerText.Trim() is "&nbsp;" or "" && body.FirstChild.SelectNodes(".//img") == null)
         {
             body.RemoveChild(body.FirstChild);
         }
@@ -209,7 +225,7 @@ public class PublishingPlatform
         {
             if (mapping.TryGetValue(img.Attributes["src"].Value, out var path))
             {
-                img.Attributes["src"].Value = path;
+                img.Attributes["src"].Value = "https://ayende.com" + path;
             }
         }
     }

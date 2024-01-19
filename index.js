@@ -300,7 +300,7 @@ async function getBlogClient() {
     else {
         const newPostId = await blogClient.createPost(post);
         await docs.documents.batchUpdate({
-            documentId: documentId,
+            documentId: file,
             requestBody: {
                 requests: [{
                     insertText: {

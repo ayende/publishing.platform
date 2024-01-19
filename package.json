@@ -1,0 +1,16 @@
+{
+  "name": "blog.publishing",
+  "version": "1.0.0",
+  "description": "Publish posts from Google Docs to MetaWeblogAPI",
+  "main": "index.js",
+  "author": "Oren Eini <ayende@ayende.com>",
+  "dependencies": {
+    "@google-cloud/local-auth": "^2.1.0",
+    "adm-zip": "^0.5.10",
+    "flourite": "^1.2.4",
+    "googleapis": "^105.0.0",
+    "jssoup": "^0.0.15",
+    "metaweblog-api": "^1.2.0",
+    "prismjs": "^1.29.0"
+  }
+}

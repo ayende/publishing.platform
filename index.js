@@ -85,13 +85,14 @@ async function processFile(auth, fileId) {
     var htmlText = entries.find(e => path.extname(e.entryName) == '.html')
         .getData().toString('utf8');
 
-    const htmlDoc = new jssoup(htmlText).find('body');
+    const htmlDoc = new jssoup(htmlText)
+    const body = htmlDoc.find('body');
 
     let tags = [];
     let postId = null;
     let codeSegmentIndex = 0;
     let inCodeSegment = false;
-    htmlDoc.findAll().forEach(e => {
+    body.findAll().forEach(e => {
         var text = e.getText().trim();
         if (text == "&#60419;") {
             e.replaceWith(blocks[codeSegmentIndex++]);
@@ -104,7 +105,7 @@ async function processFile(auth, fileId) {
             inCodeSegment = false;
         }
     })
-    htmlDoc.findAll('span').forEach(span => {
+    body.findAll('span').forEach(span => {
         var text = span.getText();
 
         if (text.startsWith('Tags:')) {
@@ -117,7 +118,7 @@ async function processFile(auth, fileId) {
         }
     });
 
-    htmlDoc.findAll('a').forEach(a => {
+    body.findAll('a').forEach(a => {
         if (a.attrs.hasOwnProperty('href')) {
             // Google Docs put a redirect like: https://www.google.com/url?q=ACTUAL_URL
             var link = new URL(a.attrs.href);
@@ -127,7 +128,7 @@ async function processFile(auth, fileId) {
             }
         }
     });
-    htmlDoc.findAll('img').forEach(img => {
+    body.findAll('img').forEach(img => {
         if (img.attrs.hasOwnProperty('src')) {
             let src = img.attrs.src;
             let imgName = src.split('/').pop();
@@ -138,7 +139,7 @@ async function processFile(auth, fileId) {
         }
     })
 
-    var currentElement = htmlDoc.nextElement;
+    var currentElement = body.nextElement;
     let cleanHTML = cleanHtml(currentElement);
     while (currentElement.nextSibling !== undefined) {
         currentElement = currentElement.nextSibling;
@@ -165,7 +166,7 @@ function cleanHtml(htmlElement) {
     };
     let newStyles = '';
     if (htmlElement.attrs.hasOwnProperty('style')) {
-        newStyles = computeNewStyles(htmlElement, newStyles, modifiers);
+        newStyles = computeNewStyles(htmlElement, modifiers);
     }
     modifiers['styles'] = newStyles;
     let href;
@@ -223,6 +224,12 @@ function computeNewStyles(htmlElement, modifiers) {
     const validStyles = computeValidStyles(htmlElement);
 
     let newStyles = '';
+    if (htmlElement.name === "table") {
+        newStyles += "width:100%;"
+    }
+    if (htmlElement.name === "tr") {
+        modifiers['bold'] = htmlElement.previousElement.name === "table";
+    }
     for (let style of htmlElement.attrs.style.split(';')) {
         let parts = style.split(':');
         if (parts.length !== 2)

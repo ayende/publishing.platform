@@ -178,7 +178,7 @@ function cleanHtml(htmlElement) {
     let newElemStart;
     let newElemEnd;
     if (newStyles) {
-        newElemStart = '<' + htmlElement.name + ' style="' + modifiers['styles'] + href + '">';
+        newElemStart = '<' + htmlElement.name + ' style="' + modifiers['styles'] +'"' +  href + '>';
         newElemEnd = '</' + htmlElement.name + '>';
     } else {
         newElemStart = '<' + htmlElement.name + href + '>';

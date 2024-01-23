@@ -72,10 +72,10 @@ async function processFile(auth, fileId) {
     let blocks = [];
     for (const match of text.data.matchAll(/\uEC03(.*?)\uEC02/gs)) {
         const code = match[1].trim();
-        const lang = flourite(code, { shiki: true, noUnkown: true }).language;
+        const lang = flourite(code, { shiki: true, noUnknown: true }).language;
         const formattedCode = Prism.highlight(code, Prism.languages[lang], lang);
 
-        blocks.push("<hr/><pre class='line-numbers language-" + lang + ">" +
+        blocks.push("<hr/><pre class='line-numbers language-" + lang + "'>" +
             "<code class='line-numbers language-" + lang + "'>" +
             formattedCode + "</code></pre><hr/>");
     }

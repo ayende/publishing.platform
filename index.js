@@ -8,6 +8,14 @@ const MetaWeblog = require('metaweblog-api');
 const flourite = require('flourite');
 const Prism = require('prismjs');
 const { URL } = require('url');
+const loadLanguages = require('prismjs/components/');
+loadLanguages(['lua', 'powershell', 'typescript', 'csharp',
+    'fsharp', 'sql', 'bash', 'yaml', 'json', 'xml', 'markdown',
+    'docker', 'ini', 'java', 'javascript', 'python', 'rust', 'swift', 'go',
+    'ruby', 'php', 'perl', 'powershell', 'shell', 'kotlin', 'groovy', 'scala',
+    'clojure', 'haskell', 'elm', 'erlang', 'ocaml', 'r', 'dart', 'julia', 'elixir', 'crystal',
+    'nim', 'reason', 'html', 'css', 'scss', 'less', 'stylus', 'pug', 'handlebars',
+    'ejs', 'twig', 'bash', 'sh', 'shell', 'awk', 'vim', 'makefile', 'cmake',]);
 
 const SCOPES = [
     "https://www.googleapis.com/auth/documents",
@@ -72,7 +80,10 @@ async function processFile(auth, fileId) {
     let blocks = [];
     for (const match of text.data.matchAll(/\uEC03(.*?)\uEC02/gs)) {
         const code = match[1].trim();
-        const lang = flourite(code, { shiki: true, noUnkown: true }).language;
+        let lang = flourite(code, { shiki: true, noUnkown: true }).language;
+        if (Prism.languages.hasOwnProperty(lang) == false) {
+            lang = "csharp";
+        }
         const formattedCode = Prism.highlight(code, Prism.languages[lang], lang);
 
         blocks.push("<hr/><pre class='line-numbers language-" + lang + ">" +

@@ -80,13 +80,13 @@ async function processFile(auth, fileId) {
     let blocks = [];
     for (const match of text.data.matchAll(/\uEC03(.*?)\uEC02/gs)) {
         const code = match[1].trim();
-        let lang = flourite(code, { shiki: true, noUnkown: true }).language;
+        let lang = flourite(code, { shiki: true, noUnknown: true }).language;
         if (Prism.languages.hasOwnProperty(lang) == false) {
-            lang = "csharp";
+            lang = "bash";
         }
         const formattedCode = Prism.highlight(code, Prism.languages[lang], lang);
 
-        blocks.push("<hr/><pre class='line-numbers language-" + lang + ">" +
+        blocks.push("<hr/><pre class='line-numbers language-" + lang + "'>" +
             "<code class='line-numbers language-" + lang + "'>" +
             formattedCode + "</code></pre><hr/>");
     }
@@ -189,7 +189,7 @@ function cleanHtml(htmlElement) {
     let newElemStart;
     let newElemEnd;
     if (newStyles) {
-        newElemStart = '<' + htmlElement.name + ' style="' + modifiers['styles'] + href + '">';
+        newElemStart = '<' + htmlElement.name + ' style="' + modifiers['styles'] + '"' + href + '>';
         newElemEnd = '</' + htmlElement.name + '>';
     } else {
         newElemStart = '<' + htmlElement.name + href + '>';

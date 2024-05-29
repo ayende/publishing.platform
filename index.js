@@ -8,6 +8,7 @@ const MetaWeblog = require('metaweblog-api');
 const flourite = require('flourite');
 const Prism = require('prismjs');
 const { URL } = require('url');
+
 const loadLanguages = require('prismjs/components/');
 loadLanguages(['lua', 'powershell', 'typescript', 'csharp',
     'fsharp', 'sql', 'bash', 'yaml', 'json', 'xml', 'markdown',
@@ -181,6 +182,13 @@ function cleanHtml(htmlElement) {
     }
     modifiers['styles'] = newStyles;
     let href;
+    let classes;
+    if (htmlElement.name == "table") {
+        classes = ' class="table-bordered table-striped" ';
+    }
+    else {
+        classes = '';
+    }
     if (htmlElement.name === "a") {
         href = ' href="' + htmlElement.attrs.href + '"';
     } else {
@@ -189,7 +197,7 @@ function cleanHtml(htmlElement) {
     let newElemStart;
     let newElemEnd;
     if (newStyles) {
-        newElemStart = '<' + htmlElement.name + ' style="' + modifiers['styles'] + '"' + href + '>';
+        newElemStart = '<' + htmlElement.name + ' style="' + modifiers['styles'] + '"' + href + classes + '>';
         newElemEnd = '</' + htmlElement.name + '>';
     } else {
         newElemStart = '<' + htmlElement.name + href + '>';
@@ -207,7 +215,7 @@ function cleanHtml(htmlElement) {
         newElemStart = '';
         newElemEnd = '';
     }
-    let newHtmlElement = `${newElemStart}${modifiers['bold'] ? '<strong>' : ''}${modifiers['italics'] ? '<em>' : ''}${newContents}${modifiers['italics'] ? '</em>' : ''}${modifiers['bold'] ? '</strong>' : ''}${newElemEnd}`;
+    let newHtmlElement = `${modifiers['quote'] ? '<blockquote>' : ''}${newElemStart}${modifiers['bold'] ? '<strong>' : ''}${modifiers['italics'] ? '<em>' : ''}${newContents}${modifiers['italics'] ? '</em>' : ''}${modifiers['bold'] ? '</strong>' : ''}${newElemEnd}${modifiers['quote'] ? '</blockquote>' : ''}`;
     if (htmlElement.name === "td" || htmlElement.name === "li") {
         newHtmlElement = newHtmlElement.replace(/<p.*?>/g, "");
         newHtmlElement = newHtmlElement.replace('</p>', "");
@@ -246,6 +254,9 @@ function computeNewStyles(htmlElement, modifiers) {
         if (parts.length !== 2)
             continue;
         let styleType = parts[0].trim(), styleValue = parts[1].trim();
+        if (styleType == 'margin-left' && htmlElement.name === "p") {
+            modifiers['quote'] = styleValue === '36pt';
+        }
 
         if (validStyles.has(styleType) === false || styleValue === undefined)
             continue;

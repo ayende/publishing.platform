@@ -8,8 +8,10 @@ const MetaWeblog = require('metaweblog-api');
 const flourite = require('flourite');
 const Prism = require('prismjs');
 const { URL } = require('url');
+const { exec } = require('child_process');
 
 const loadLanguages = require('prismjs/components/');
+const { cwd } = require('process');
 loadLanguages(['lua', 'powershell', 'typescript', 'csharp',
     'fsharp', 'sql', 'bash', 'yaml', 'json', 'xml', 'markdown',
     'docker', 'ini', 'java', 'javascript', 'python', 'rust', 'swift', 'go',
@@ -85,7 +87,7 @@ async function processFile(auth, fileId) {
         if (Prism.languages.hasOwnProperty(lang) == false) {
             lang = "bash";
         }
-        const formattedCode = Prism.highlight(code, Prism.languages[lang], lang);
+        const formattedCode = Prism.highlight(code, Prism.languages[lang] || Prism.languages['clike'], lang);
 
         blocks.push("<hr/><pre class='line-numbers language-" + lang + "'>" +
             "<code class='line-numbers language-" + lang + "'>" +
@@ -143,11 +145,17 @@ async function processFile(auth, fileId) {
     body.findAll('img').forEach(img => {
         if (img.attrs.hasOwnProperty('src')) {
             let src = img.attrs.src;
+            let dimensions = extractDimensions(img.attrs.style);
             let imgName = src.split('/').pop();
             let imgData = entries.find(e => e.entryName === 'images/' + imgName).getData();
             let imgType = imgName.split('.').pop();
             let imgSrc = 'data:image/' + imgType + ';base64,' + imgData.toString('base64');
-            img.replaceWith('<img src="' + imgSrc + '" style="float: right"/>');
+            if (!dimensions || dimensions.width < 200 && dimensions.height < 200) {
+                img.replaceWith('<img src="' + imgSrc + '" style="float: right"/>');
+            }
+            else {
+                img.replaceWith('<img src="' + imgSrc + '"/>');
+            }
         }
     })
 
@@ -163,7 +171,21 @@ async function processFile(auth, fileId) {
     return [cleanHTML, postId, tags];
 }
 
+function extractDimensions(cssString) {
+    const matches = cssString.match(/width: (\d+\.\d+)px; height: (\d+\.\d+)px;/);
+    if (matches) {
+        const width = parseFloat(matches[1]);
+        const height = parseFloat(matches[2]);
+        return { width, height };
+    } else {
+        return null; // Invalid CSS string format
+    }
+}
+
 function cleanHtml(htmlElement) {
+    if (htmlElement.name == "hr") {
+        return "<hr/>";
+    }
     if (htmlElement.hasOwnProperty('contents') === false) {
         let text = htmlElement._text;
         if (text === "&nbsp;" && htmlElement.parent.name !== "td") {
@@ -340,6 +362,7 @@ async function getBlogClient() {
             }
         });
     }
-    console.log('Published: ' + doc.data.title);
+    console.log('Published: ', doc.data.title);
+    exec("start http://ayende.com/blog/")
 
 })()

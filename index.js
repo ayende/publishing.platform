@@ -60,7 +60,7 @@ function matchesSelector(selector, element) {
 
 function findMatchingRules(element, rules) {
     return rules.filter(rule =>
-        rule.selectors.some(selector =>
+        (rule.selectors || []).some(selector =>
             selector.split(' ').every(s => matchesSelector(s, element))
         )
     );

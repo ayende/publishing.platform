@@ -236,7 +236,7 @@ function cleanHtml(htmlElement, styleRules) {
         newElemStart = '';
         newElemEnd = '';
     }
-    let newHtmlElement = `${modifiers['quote'] ? '<blockquote>' : ''}${newElemStart}${modifiers['bold'] ? '<strong>' : ''}${modifiers['italics'] ? '<em>' : ''}${newContents}${modifiers['italics'] ? '</em>' : ''}${modifiers['bold'] ? '</strong>' : ''}${newElemEnd}${modifiers['quote'] ? '</blockquote>' : ''}`;
+    let newHtmlElement = `${modifiers['code'] ? '<code>' : ''}${modifiers['quote'] ? '<blockquote>' : ''}${newElemStart}${modifiers['bold'] ? '<strong>' : ''}${modifiers['italics'] ? '<em>' : ''}${newContents}${modifiers['italics'] ? '</em>' : ''}${modifiers['bold'] ? '</strong>' : ''}${newElemEnd}${modifiers['quote'] ? '</blockquote>' : ''}${modifiers['code'] ? '</code>' : ''}`;
     if (htmlElement.name === "td" || htmlElement.name === "li") {
         newHtmlElement = newHtmlElement.replace(/<p.*?>/g, "");
         newHtmlElement = newHtmlElement.replace('</p>', "");
@@ -249,13 +249,13 @@ function computeValidStyles(htmlElement) {
     const headings = new Set(['h1', 'h2', 'h3', 'h4', 'h5']);
     let validStyles;
     if (htmlElement.parent.name === "a") {
-        validStyles = ['color', 'font-style', 'font-weight', 'text-align'];
+        validStyles = ['color', 'font-style', 'font-weight', 'text-align', 'font-family'];
     } else if (headings.has(htmlElement.parent.name)) {
-        validStyles = ['text-align'];
+        validStyles = ['text-align', 'font-family'];
     } else if (htmlElement.name === "li" || htmlElement.name === "b") {
-        validStyles = [];
+        validStyles = ['font-family'];
     } else {
-        validStyles = ['color', 'font-style', 'font-weight', 'text-decoration', 'text-decoration-line', 'text-align'];
+        validStyles = ['color', 'font-style', 'font-weight', 'text-decoration', 'text-decoration-line', 'text-align', 'font-family'];
     }
     return new Set(validStyles);
 }
@@ -278,6 +278,9 @@ function applyStyle(styleType, styleValue, htmlElement, modifiers, validStyles) 
     }
     if (styleType === 'font-weight' && styleValue > 500) {
         modifiers['bold'] = true;
+    }
+    if (styleType === 'font-family' && styleValue.indexOf("Consolas") != -1) {
+        modifiers['code'] = true;
     }
     if ((styleType === 'text-decoration-line' || styleType === 'text-decoration') && styleValue === 'underline') {
         newStyles += 'text-decoration:underline;';

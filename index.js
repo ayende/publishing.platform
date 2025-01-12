@@ -1,6 +1,8 @@
-const fs = require('fs');
+const fs = require('fs').promises;
 const path = require('path');
 const css = require('css');
+const { authenticate } = require('@google-cloud/local-auth');
+const { google } = require('googleapis');
 const admZip = require("adm-zip");
 const { default: jssoup } = require('jssoup');
 const MetaWeblog = require('metaweblog-api');
@@ -19,63 +21,68 @@ loadLanguages(['lua', 'powershell', 'typescript', 'csharp',
     'nim', 'reason', 'html', 'css', 'scss', 'less', 'stylus', 'pug', 'handlebars',
     'ejs', 'twig', 'bash', 'sh', 'shell', 'awk', 'vim', 'makefile', 'cmake',]);
 
+const SCOPES = [
+    "https://www.googleapis.com/auth/documents",
+    "https://www.googleapis.com/auth/drive.readonly"
+];
 
+
+const TOKEN_PATH = 'C:/Work/Credentials/token.json';
 const CREDENTIALS_PATH = 'C:/Work/Credentials/credentials.json';
-const DATA_PATH = 'C:/Work/Credentials/post-ids.json';
 
-async function downloadFile(file, type) {
-    const lastSlash = file.lastIndexOf('/');
-    const url = file.substring(0, lastSlash) + "/export?format=" + type;
-    const response = await fetch(url);
-    let filename = null;
-    if (!response.ok) {
-        let errorBody = '';
-        try {
-            // Try to get the response body as text
-            errorBody = await response.text();
-        } catch (bodyError) {
-            console.error('Failed to read error body:', bodyError);
-        }
-        throw new Error(`HTTP error! status: ${response.status}, body: ${errorBody}`);
+
+async function loadSavedCredentialsIfExist() {
+    try {
+        const content = await fs.readFile(TOKEN_PATH);
+        const credentials = JSON.parse(content);
+        return google.auth.fromJSON(credentials);
+    } catch (err) {
+        return null;
     }
-    var contentDisposition = response.headers.get('Content-Disposition');
-    const utf8Part = contentDisposition.match(/filename\*=UTF-8''(.+)/);
-    if (utf8Part && utf8Part[1]) {
-        filename = decodeURIComponent(utf8Part[1]);
-        filename = filename.substring(0, filename.lastIndexOf('.'));
-    }
-    return [response, filename];
 }
 
-function matchesSelector(selector, element) {
-    if (selector.startsWith('#')) {
-        return selector.slice(1) === element.id;
-    }
-    if (selector.startsWith('.')) {
-        element.classes = element.classes || (element.attrs.class || '').split(' ');
-        return element.classes.includes(selector.slice(1));
-    }
-    return selector === element.name;
+async function saveCredentials(client) {
+    const content = await fs.readFile(CREDENTIALS_PATH);
+    const keys = JSON.parse(content);
+    const key = keys.installed || keys.web;
+    const payload = JSON.stringify({
+        type: 'authorized_user',
+        client_id: key.client_id,
+        client_secret: key.client_secret,
+        refresh_token: client.credentials.refresh_token,
+    });
+    await fs.writeFile(TOKEN_PATH, payload);
 }
 
-function findMatchingRules(element, rules) {
-    return rules.filter(rule =>
-        (rule.selectors || []).some(selector =>
-            selector.split(' ').every(s => matchesSelector(s, element))
-        )
-    );
+async function authorize() {
+    let client = await loadSavedCredentialsIfExist();
+    if (client) {
+        return client;
+    }
+    client = await authenticate({
+        scopes: SCOPES,
+        keyfilePath: CREDENTIALS_PATH,
+    });
+    if (client.credentials) {
+        await saveCredentials(client);
+    }
+    return client;
 }
 
 
-async function processFile(file) {
-
-    const [zipDownload, _] = await downloadFile(file, 'zip');
-    const [textDownload, fileName] = await downloadFile(file, 'txt');
-    const text = await textDownload.text();
-
+async function processFile(auth, fileId) {
+    const drive = google.drive({ version: 'v3', auth: auth });
+    const file = await drive.files.export({
+        fileId: fileId,
+        mimeType: 'application/zip',
+    }, { responseType: 'arraybuffer' });
+    const text = await drive.files.export({
+        fileId: fileId,
+        mimeType: 'text/plain'
+    });
 
     let blocks = [];
-    for (const match of text.matchAll(/\uEC03(.*?)\uEC02/gs)) {
+    for (const match of text.data.matchAll(/\uEC03(.*?)\uEC02/gs)) {
         const code = match[1].trim();
         let lang = flourite(code, { shiki: true, noUnknown: true }).language;
         if (Prism.languages.hasOwnProperty(lang) == false) {
@@ -88,17 +95,17 @@ async function processFile(file) {
             formattedCode + "</code></pre><hr/>");
     }
 
-    const zip = new admZip(Buffer.from(await zipDownload.arrayBuffer()));
+    const zip = new admZip(Buffer.from(file.data));
     const entries = zip.getEntries();
     var htmlText = entries.find(e => path.extname(e.entryName) == '.html')
         .getData().toString('utf8');
 
     const htmlDoc = new jssoup(htmlText)
+    const body = htmlDoc.find('body');
+
     const style = htmlDoc.find('style');
 
     let styleRules = css.parse(style.text).stylesheet.rules;
-
-    const body = htmlDoc.find('body');
 
     let tags = [];
     let postId = null;
@@ -164,13 +171,10 @@ async function processFile(file) {
         cleanHTML += cleanHtml(currentElement, styleRules);
     }
 
+
     cleanHTML += `\r\n<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/9000.0.1/themes/prism.min.css" integrity="sha512-/mZ1FHPkg6EKcxo0fKXF51ak6Cr2ocgDi5ytaTBjsQZIH/RNs6GF6+oId/vPe3eJB836T36nXwVh/WBl/cWT4w==" crossorigin="anonymous" referrerpolicy="no-referrer" />`;
 
-    if (!postId) {
-        postId = readPostId(file);
-    }
-
-    return [cleanHTML, postId, tags, fileName];
+    return [cleanHTML, postId, tags];
 }
 
 function extractDimensions(cssString) {
@@ -198,7 +202,8 @@ function cleanHtml(htmlElement, styleRules) {
     let modifiers = {
         bold: false,
         italics: false,
-        styles: ''
+        code: false,
+        styles: '',
     };
     let newStyles = computeNewStyles(htmlElement, modifiers, styleRules);
     modifiers['styles'] = newStyles;
@@ -244,6 +249,24 @@ function cleanHtml(htmlElement, styleRules) {
     return newHtmlElement;
 }
 
+function matchesSelector(selector, element) {
+    if (selector.startsWith('#')) {
+        return selector.slice(1) === element.id;
+    }
+    if (selector.startsWith('.')) {
+        element.classes = element.classes || (element.attrs.class || '').split(' ');
+        return element.classes.includes(selector.slice(1));
+    }
+    return selector === element.name;
+}
+
+function findMatchingRules(element, rules) {
+    return rules.filter(rule =>
+        (rule.selectors || []).some(selector =>
+            selector.split(' ').every(s => matchesSelector(s, element))
+        )
+    );
+}
 
 function computeValidStyles(htmlElement) {
     const headings = new Set(['h1', 'h2', 'h3', 'h4', 'h5']);
@@ -303,7 +326,8 @@ function computeNewStyles(htmlElement, modifiers, styleRules) {
         modifiers['bold'] = htmlElement.previousElement.name === "table";
     }
     if (htmlElement.attrs.style) {
-        for (let style of htmlElement.attrs.style.split(';')) {
+        let escapedStyle = htmlElement.attrs.style.replace(/&quot;/g, '"');
+        for (let style of escapedStyle.split(';')) {
             let parts = style.split(':');
             if (parts.length !== 2)
                 continue;
@@ -323,7 +347,7 @@ function computeNewStyles(htmlElement, modifiers, styleRules) {
 }
 
 async function getBlogClient() {
-    const content = fs.readFileSync(CREDENTIALS_PATH);
+    const content = await fs.readFile(CREDENTIALS_PATH);
     const blog = JSON.parse(content).blog;
     const blogApi = new MetaWeblog('https://ayende.com/blog/Services/MetaWeblogAPI.ashx');
     return {
@@ -339,36 +363,27 @@ async function getBlogClient() {
     }
 }
 
-function readPostId(key) {
-    let data;
-    try {
-        data = JSON.parse(fs.readFileSync(DATA_PATH, 'utf8'));
-    } catch (err) {
-        data = {};
-    }
-    return data[key];
-}
-
-function writePostId(key, value) {
-    let data;
-    try {
-        data = JSON.parse(fs.readFileSync(DATA_PATH, 'utf8'));
-    } catch (err) {
-        data = {};
-    }
-    data[key] = value;
-    fs.writeFileSync(DATA_PATH, JSON.stringify(data, null, 2)); // Pretty print with 2 spaces
-}
-
 (async () => {
 
-    const file = process.argv[2];
+    let arg =  process.argv[2];
 
-    const [html, postId, tags, title] = await processFile(file);
+    try {
+        const url = new URL(arg);
+        const parts = url.pathname.split('/');
+        arg = parts[parts.length - 2];
+    } catch {
+        arg = process.argv[1];
+    }
+
+    const file = arg;
+    const auth = await authorize();
+    const [html, postId, tags] = await processFile(auth, file);
+    const docs = google.docs({ version: 'v1', auth });
+    const doc = await docs.documents.get({ documentId: file });
 
     var post = {
         description: html,
-        title: title,
+        title: doc.data.title,
         categories: tags,
     };
 
@@ -379,9 +394,19 @@ function writePostId(key, value) {
     }
     else {
         const newPostId = await blogClient.createPost(post);
-        writePostId(file, newPostId);
-        console.log('Created: ', newPostId);
+        await docs.documents.batchUpdate({
+            documentId: file,
+            requestBody: {
+                requests: [{
+                    insertText: {
+                        text: `PostId: ${newPostId}\n`,
+                        location: { index: 1 }
+                    }
+                }]
+            }
+        });
     }
-    console.log('Published: ', title);
+    console.log('Published: ', doc.data.title);
     exec("start http://ayende.com/blog/")
+
 })()

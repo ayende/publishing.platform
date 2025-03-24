@@ -1,4 +1,5 @@
 const fs = require('fs').promises;
+const crypto = require('crypto');
 const path = require('path');
 const { authenticate } = require('@google-cloud/local-auth');
 const { google } = require('googleapis');
@@ -69,7 +70,7 @@ async function authorize() {
 }
 
 
-async function processFile(auth, fileId) {
+async function processFile(auth, blogClient, fileId) {
     const drive = google.drive({ version: 'v3', auth: auth });
     const file = await drive.files.export({
         fileId: fileId,
@@ -109,7 +110,10 @@ async function processFile(auth, fileId) {
     body.findAll().forEach(e => {
         var text = e.getText().trim();
         if (text == "&#60419;") {
-            e.replaceWith(blocks[codeSegmentIndex++]);
+            var n = blocks[codeSegmentIndex++];
+            if (n) {
+                e.replaceWith(n);
+            }
             inCodeSegment = true;
         }
         if (inCodeSegment) {
@@ -142,22 +146,27 @@ async function processFile(auth, fileId) {
             }
         }
     });
-    body.findAll('img').forEach(img => {
-        if (img.attrs.hasOwnProperty('src')) {
-            let src = img.attrs.src;
-            let dimensions = extractDimensions(img.attrs.style);
-            let imgName = src.split('/').pop();
-            let imgData = entries.find(e => e.entryName === 'images/' + imgName).getData();
-            let imgType = imgName.split('.').pop();
-            let imgSrc = 'data:image/' + imgType + ';base64,' + imgData.toString('base64');
-            if (!dimensions || dimensions.width < 200 && dimensions.height < 200) {
-                img.replaceWith('<img src="' + imgSrc + '" style="float: right"/>');
-            }
-            else {
-                img.replaceWith('<img src="' + imgSrc + '"/>');
-            }
+    const images = body.findAll('img');
+    for (let i = 0; i < images.length; i++) {
+        const img = images[i];
+        let src = img.attrs.src;
+        let dimensions = extractDimensions(img.attrs.style);
+        let imgName = src.split('/').pop();
+        let imgData = entries.find(e => e.entryName === 'images/' + imgName).getData();
+        let imgType = imgName.split('.').pop();
+        const hash = crypto.createHash('md5')
+            .update(imgData)
+            .digest('base64url') + '.' + imgType;
+
+        const upload = await blogClient.uploadImage(hash, 'image/' + imgType, imgData);
+        const id = upload.url.replace('\\', '/');
+        if (!dimensions || dimensions.width < 200 && dimensions.height < 200) {
+            img.replaceWith('<img src="' + id + '" style="float: right"/>');
         }
-    })
+        else {
+            img.replaceWith('<img src="' + id + '"/>');
+        }
+    }
 
     var currentElement = body.nextElement;
     let cleanHTML = cleanHtml(currentElement);
@@ -315,6 +324,9 @@ async function getBlogClient() {
         },
         createPost: async (post) => {
             return await blogApi.newPost('', blog.username, blog.password, post, true);
+        },
+        uploadImage: async (name, type, bits) => {
+            return await blogApi.newMediaObject('', blog.username, blog.password, { name: name, type: type, bits: bits });
         }
     }
 }
@@ -333,7 +345,8 @@ async function getBlogClient() {
 
     const file = arg;
     const auth = await authorize();
-    const [html, postId, tags] = await processFile(auth, file);
+    const blogClient = await getBlogClient();
+    const [html, postId, tags] = await processFile(auth, blogClient, file);
     const docs = google.docs({ version: 'v1', auth });
     const doc = await docs.documents.get({ documentId: file });
 
@@ -343,7 +356,6 @@ async function getBlogClient() {
         categories: tags,
     };
 
-    const blogClient = await getBlogClient();
 
     if (postId) {
         await blogClient.editPost(postId, post);
@@ -363,6 +375,6 @@ async function getBlogClient() {
         });
     }
     console.log('Published: ', doc.data.title);
-    exec("start http://ayende.com/blog/")
+    exec("start https://ayende.com/blog/")
 
 })()

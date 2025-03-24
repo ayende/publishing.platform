@@ -1,6 +1,7 @@
 const fs = require('fs').promises;
 const crypto = require('crypto');
 const path = require('path');
+const css = require('css');
 const { authenticate } = require('@google-cloud/local-auth');
 const { google } = require('googleapis');
 const admZip = require("adm-zip");
@@ -103,6 +104,10 @@ async function processFile(auth, blogClient, fileId) {
     const htmlDoc = new jssoup(htmlText)
     const body = htmlDoc.find('body');
 
+    const style = htmlDoc.find('style');
+
+    let styleRules = css.parse(style.text).stylesheet.rules;
+
     let tags = [];
     let postId = null;
     let codeSegmentIndex = 0;
@@ -169,11 +174,12 @@ async function processFile(auth, blogClient, fileId) {
     }
 
     var currentElement = body.nextElement;
-    let cleanHTML = cleanHtml(currentElement);
+    let cleanHTML = cleanHtml(currentElement, styleRules);
     while (currentElement.nextSibling !== undefined) {
         currentElement = currentElement.nextSibling;
-        cleanHTML += cleanHtml(currentElement);
+        cleanHTML += cleanHtml(currentElement, styleRules);
     }
+
 
     cleanHTML += `\r\n<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/9000.0.1/themes/prism.min.css" integrity="sha512-/mZ1FHPkg6EKcxo0fKXF51ak6Cr2ocgDi5ytaTBjsQZIH/RNs6GF6+oId/vPe3eJB836T36nXwVh/WBl/cWT4w==" crossorigin="anonymous" referrerpolicy="no-referrer" />`;
 
@@ -191,7 +197,7 @@ function extractDimensions(cssString) {
     }
 }
 
-function cleanHtml(htmlElement) {
+function cleanHtml(htmlElement, styleRules) {
     if (htmlElement.name == "hr") {
         return "<hr/>";
     }
@@ -205,12 +211,10 @@ function cleanHtml(htmlElement) {
     let modifiers = {
         bold: false,
         italics: false,
-        styles: ''
+        code: false,
+        styles: '',
     };
-    let newStyles = '';
-    if (htmlElement.attrs.hasOwnProperty('style')) {
-        newStyles = computeNewStyles(htmlElement, modifiers);
-    }
+    let newStyles = computeNewStyles(htmlElement, modifiers, styleRules);
     modifiers['styles'] = newStyles;
     let href;
     let classes;
@@ -237,7 +241,7 @@ function cleanHtml(htmlElement) {
     let contents = htmlElement.contents;
     let newContents = '';
     for (let i = 0; i < contents.length; i++) {
-        newContents += cleanHtml(contents[i]);
+        newContents += cleanHtml(contents[i], styleRules);
     }
     if (newContents === "") {
         return '';
@@ -246,7 +250,7 @@ function cleanHtml(htmlElement) {
         newElemStart = '';
         newElemEnd = '';
     }
-    let newHtmlElement = `${modifiers['quote'] ? '<blockquote>' : ''}${newElemStart}${modifiers['bold'] ? '<strong>' : ''}${modifiers['italics'] ? '<em>' : ''}${newContents}${modifiers['italics'] ? '</em>' : ''}${modifiers['bold'] ? '</strong>' : ''}${newElemEnd}${modifiers['quote'] ? '</blockquote>' : ''}`;
+    let newHtmlElement = `${modifiers['code'] ? '<code>' : ''}${modifiers['quote'] ? '<blockquote>' : ''}${newElemStart}${modifiers['bold'] ? '<strong>' : ''}${modifiers['italics'] ? '<em>' : ''}${newContents}${modifiers['italics'] ? '</em>' : ''}${modifiers['bold'] ? '</strong>' : ''}${newElemEnd}${modifiers['quote'] ? '</blockquote>' : ''}${modifiers['code'] ? '</code>' : ''}`;
     if (htmlElement.name === "td" || htmlElement.name === "li") {
         newHtmlElement = newHtmlElement.replace(/<p.*?>/g, "");
         newHtmlElement = newHtmlElement.replace('</p>', "");
@@ -254,23 +258,73 @@ function cleanHtml(htmlElement) {
     return newHtmlElement;
 }
 
+function matchesSelector(selector, element) {
+    if (selector.startsWith('#')) {
+        return selector.slice(1) === element.id;
+    }
+    if (selector.startsWith('.')) {
+        element.classes = element.classes || (element.attrs.class || '').split(' ');
+        return element.classes.includes(selector.slice(1));
+    }
+    return selector === element.name;
+}
+
+function findMatchingRules(element, rules) {
+    return rules.filter(rule =>
+        (rule.selectors || []).some(selector =>
+            selector.split(' ').every(s => matchesSelector(s, element))
+        )
+    );
+}
 
 function computeValidStyles(htmlElement) {
     const headings = new Set(['h1', 'h2', 'h3', 'h4', 'h5']);
     let validStyles;
     if (htmlElement.parent.name === "a") {
-        validStyles = ['color', 'font-style', 'font-weight', 'text-align'];
+        validStyles = ['color', 'font-style', 'font-weight', 'text-align', 'font-family'];
     } else if (headings.has(htmlElement.parent.name)) {
-        validStyles = ['text-align'];
+        validStyles = ['text-align', 'font-family'];
     } else if (htmlElement.name === "li" || htmlElement.name === "b") {
-        validStyles = [];
+        validStyles = ['font-family'];
     } else {
-        validStyles = ['color', 'font-style', 'font-weight', 'text-decoration', 'text-decoration-line', 'text-align'];
+        validStyles = ['color', 'font-style', 'font-weight', 'text-decoration', 'text-decoration-line', 'text-align', 'font-family'];
     }
     return new Set(validStyles);
 }
 
-function computeNewStyles(htmlElement, modifiers) {
+function applyStyle(styleType, styleValue, htmlElement, modifiers, validStyles) {
+    let newStyles = '';
+
+    if (styleType == 'margin-left' && htmlElement.name === "p") {
+        modifiers['quote'] = styleValue === '36pt';
+    }
+
+    if (validStyles.has(styleType) === false || styleValue === undefined)
+        return newStyles;
+
+    if (styleType === 'color' && (styleValue !== "#000000" && styleValue !== "#1155cc")) {
+        newStyles += 'color:' + styleValue + ';';
+    }
+    if (styleType === 'font-style' && styleValue === 'italic') {
+        modifiers['italics'] = true;
+    }
+    if (styleType === 'font-weight' && styleValue > 500) {
+        modifiers['bold'] = true;
+    }
+    if (styleType === 'font-family' && styleValue.indexOf("Consolas") != -1) {
+        modifiers['code'] = true;
+    }
+    if ((styleType === 'text-decoration-line' || styleType === 'text-decoration') && styleValue === 'underline') {
+        newStyles += 'text-decoration:underline;';
+    }
+    if (styleType === 'text-align') {
+        newStyles += 'text-align:' + styleValue + ';';
+    }
+
+    return newStyles;
+}
+
+function computeNewStyles(htmlElement, modifiers, styleRules) {
     const validStyles = computeValidStyles(htmlElement);
 
     let newStyles = '';
@@ -280,34 +334,24 @@ function computeNewStyles(htmlElement, modifiers) {
     if (htmlElement.name === "tr") {
         modifiers['bold'] = htmlElement.previousElement.name === "table";
     }
-    for (let style of htmlElement.attrs.style.split(';')) {
-        let parts = style.split(':');
-        if (parts.length !== 2)
-            continue;
-        let styleType = parts[0].trim(), styleValue = parts[1].trim();
-        if (styleType == 'margin-left' && htmlElement.name === "p") {
-            modifiers['quote'] = styleValue === '36pt';
-        }
-
-        if (validStyles.has(styleType) === false || styleValue === undefined)
-            continue;
-
-        if (styleType === 'color' && (styleValue !== "#000000" && styleValue !== "#1155cc")) {
-            newStyles += 'color:' + styleValue + ';';
-        }
-        if (styleType === 'font-style' && styleValue === 'italic') {
-            modifiers['italics'] = true;
-        }
-        if (styleType === 'font-weight' && styleValue > 500) {
-            modifiers['bold'] = true;
-        }
-        if ((styleType === 'text-decoration-line' || styleType === 'text-decoration') && styleValue === 'underline') {
-            newStyles += 'text-decoration:underline;';
-        }
-        if (styleType === 'text-align') {
-            newStyles += 'text-align:' + styleValue + ';';
+    if (htmlElement.attrs.style) {
+        let escapedStyle = htmlElement.attrs.style.replace(/&quot;/g, '"');
+        for (let style of escapedStyle.split(';')) {
+            let parts = style.split(':');
+            if (parts.length !== 2)
+                continue;
+            let styleType = parts[0].trim(), styleValue = parts[1].trim();
+            applyStyle(styleType, styleValue, htmlElement, modifiers, validStyles);
         }
     }
+    for (let match of findMatchingRules(htmlElement, styleRules)) {
+        for (let declaration of match.declarations) {
+            if (declaration.type === 'declaration') {
+                newStyles += applyStyle(declaration.property, declaration.value, htmlElement, modifiers, validStyles,);
+            }
+        }
+    }
+
     return newStyles;
 }
 
@@ -333,7 +377,7 @@ async function getBlogClient() {
 
 (async () => {
 
-    let arg = process.argv[2];
+    let arg =  process.argv[2];
 
     try {
         const url = new URL(arg);

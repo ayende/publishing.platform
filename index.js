@@ -106,7 +106,7 @@ async function processFile(auth, blogClient, fileId) {
 
     const style = htmlDoc.find('style');
 
-    let styleRules = css.parse(style.text).stylesheet.rules;
+    let styleRules = (!style || !style.text) ? [] : css.parse(style.text).stylesheet.rules;
 
     let tags = [];
     let postId = null;
@@ -179,6 +179,9 @@ async function processFile(auth, blogClient, fileId) {
         currentElement = currentElement.nextSibling;
         cleanHTML += cleanHtml(currentElement, styleRules);
     }
+
+    // Merge adjacent blockquotes into a single wrapper
+    cleanHTML = mergeAdjacentBlockquotes(cleanHTML);
 
 
     cleanHTML += `\r\n<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/9000.0.1/themes/prism.min.css" integrity="sha512-/mZ1FHPkg6EKcxo0fKXF51ak6Cr2ocgDi5ytaTBjsQZIH/RNs6GF6+oId/vPe3eJB836T36nXwVh/WBl/cWT4w==" crossorigin="anonymous" referrerpolicy="no-referrer" />`;
@@ -324,6 +327,18 @@ function applyStyle(styleType, styleValue, htmlElement, modifiers, validStyles) 
     return newStyles;
 }
 
+function mergeAdjacentBlockquotes(html) {
+    const pattern = /<blockquote>([\s\S]*?)<\/blockquote>\s*<blockquote>([\s\S]*?)<\/blockquote>/g;
+    let merged = html;
+
+    while (pattern.test(merged)) {
+        merged = merged.replace(pattern, '<blockquote>$1$2</blockquote>');
+        pattern.lastIndex = 0;
+    }
+
+    return merged;
+}
+
 function computeNewStyles(htmlElement, modifiers, styleRules) {
     const validStyles = computeValidStyles(htmlElement);
 
@@ -377,7 +392,7 @@ async function getBlogClient() {
 
 (async () => {
 
-    let arg =  process.argv[2];
+    let arg = process.argv[2];
 
     try {
         const url = new URL(arg);
